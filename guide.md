@@ -1,1111 +1,1475 @@
-import streamlit as st
+Week 9: MCP Server Implementation
+📋 Lab Preamble
+Key Objectives
+Bloom's Level
+Objective
+Remember
+List MCP primitives (Tools, Resources, Prompts)
+Understand
+Explain why protocol standardization enables interoperability
+Apply
+Implement MCP server exposing PE Org-AI-R capabilities
+Analyze
+Compare MCP vs custom API integrations
+Create
+Design resource hierarchies for portfolio data
 
-# --- App Configuration ---
-st.set_page_config(
-    page_title="QuLab: MCP Server Implementation",
-    layout="wide"
-)
+Tools Introduced
+Tool
+Purpose
+Why This Tool
+mcp-sdk
+MCP implementation
+Official Anthropic SDK
+FastMCP
+MCP server framework
+High-level abstractions
+Claude Desktop
+MCP client
+Test integration
 
-st.sidebar.image("https://www.quantuniversity.com/assets/img/logo5.jpg")
-st.sidebar.divider()
+Key Concepts
+Model Context Protocol (MCP) specification
+Tools vs Resources vs Prompts
+Transport layers (stdio, SSE)
+Claude Desktop integration
+Resource subscriptions
+Prerequisites
+Weeks 1-8 completed
+Understanding of JSON-RPC
+Familiarity with Claude Desktop
+Time Estimate
+Activity
+Duration
+Lecture
+2 hours
+Lab Work
+5 hours
+Challenge Extensions
++3 hours
+Total
+10 hours
 
-st.title("QuLab: MCP Server Implementation")
-st.divider()
 
-# Initialize session state for page navigation
-if "current_page" not in st.session_state:
-    st.session_state.current_page = "Introduction"
 
-# --- Sidebar Navigation ---
-st.sidebar.title("MCP Server Lab Navigation")
-page_options = [
-    "Introduction",
-    "Task 9.1: MCP Server Core",
-    "Task 9.2: Claude Desktop Configuration",
-    "Task 9.3: MCP Server Tests",
-    "Summary & Next Steps"
-]
+9.1 Objectives
+Objective
+Description
+Success Criteria
+MCP Server
+Full protocol implementation
+Claude Desktop connects
+Tools
+Scoring, evidence, EBITDA
+5+ tools exposed
+Resources
+Companies, funds, sectors
+Dynamic resource URIs
+Prompts
+Due diligence templates
+3+ prompts available
+Transport
+stdio + SSE support
+Both transports working
 
-try:
-    current_index = page_options.index(st.session_state.current_page)
-except ValueError:
-    current_index = 0
-
-st.session_state.current_page = st.sidebar.selectbox(
-    "Go to section:",
-    page_options,
-    index=current_index
-)
-
-st.sidebar.divider()
-st.sidebar.subheader("📋 Key Objectives")
-st.sidebar.markdown("**Remember**: List MCP primitives")
-st.sidebar.markdown("**Understand**: Protocol standardization")
-st.sidebar.markdown("**Apply**: Implement MCP server")
-st.sidebar.markdown("**Analyze**: Compare MCP vs APIs")
-st.sidebar.markdown("**Create**: Design resource hierarchies")
-
-st.sidebar.divider()
-st.sidebar.subheader("🛠️ Tools Introduced")
-st.sidebar.markdown("- **mcp-sdk**: MCP implementation")
-st.sidebar.markdown("- **FastMCP**: MCP server framework")
-st.sidebar.markdown("- **Claude Desktop**: MCP client")
-
-# --- Main Content Area ---
-
-if st.session_state.current_page == "Introduction":
-    st.subheader("1. Introduction: Laying the Groundwork for AI Interoperability")
-    
-    st.markdown("""
-    Welcome to the **PE Org-AI-R Model Context Protocol (MCP) Server Implementation Lab**!
-
-    As a Software Developer at PE Org-AI-R, a leading platform for Organizational AI-Readiness assessments, you're tasked with a crucial project: establishing the foundational AI interoperability layer. Your goal is to enable AI agents, like Claude Desktop, to seamlessly access and interact with your core Org-AI-R capabilities. This means exposing your assessment tools, data resources, and strategic prompt templates through a standardized Model Context Protocol (MCP) server.
-
-    Currently, AI-readiness assessments are often siloed, requiring manual data exports or custom API integrations for each new AI tool or client. This is inefficient and prone to inconsistencies. By implementing an MCP server, you'll standardize how AI agents discover, invoke, and interpret services, reducing integration friction and enabling autonomous AI-driven insights across the organization.
-
-    The core challenge is to transform existing services into discoverable and executable MCP primitives:
-    - **Tools:** Exposing executable functions, such as calculating the Org-AI-R score or projecting EBITDA impact
-    - **Resources:** Providing structured access to static data (e.g., sector baselines) and dynamic data (e.g., specific company scores)
-    - **Prompts:** Offering templated instructions for AI agents to perform complex, multi-step tasks like due diligence assessments or value creation plans
-
-    This project is pivotal for the organization, paving the way for a truly AI-ready ecosystem where intelligent agents can autonomously contribute to strategic decision-making.
-    """)
-    
-    st.warning("""
-    **Important Note:** MCP servers require a specific environment with Claude Desktop for testing. 
-    This Streamlit app guides you through the implementation - you'll need to build it on your own 
-    development machine. Each section provides complete code that you should implement yourself.
-    """)
-
-elif st.session_state.current_page == "Task 9.1: MCP Server Core":
-    st.subheader("Task 9.1: Building the MCP Server Core")
-    
-    st.markdown("""
-    Your first task is to implement the core MCP server that exposes PE Org-AI-R capabilities to AI agents.
-    The server will implement three key MCP primitives: **Tools**, **Resources**, and **Prompts**.
-    
-    **You will implement this on your own machine.** This page provides the complete code and explanations.
-    """)
-    
-    st.info("""
-    **Setup Steps:**
-    1. Create directory structure: `src/pe_orgair/mcp/`
-    2. Install dependencies: `pip install mcp structlog`
-    3. Create `server.py` with the code below
-    """)
-    
-    st.subheader("Part 1: Server Setup and Imports")
-    
-    with st.expander("📄 View Server Setup Code", expanded=False):
-        st.code('''# src/pe_orgair/mcp/server.py
+9.2 Implementation Tasks
+Task 9.1: MCP Server Core
+# src/pe_orgair/mcp/server.py
 
 """PE Org-AI-R MCP Server - Universal agent interoperability."""
 
 from typing import Any, Dict, List, Optional
+
 from datetime import datetime
+
 import json
+
 import asyncio
 
 from mcp.server import Server
+
 from mcp.server.stdio import stdio_server
+
 from mcp.types import (
+
     Tool,
+
     Resource,
+
     ResourceTemplate,
+
     Prompt,
+
     PromptMessage,
+
     TextContent,
+
     ToolResult,
+
     LATEST_PROTOCOL_VERSION,
+
 )
+
 import structlog
 
 from pe_orgair.services.scoring.org_air_calculator import org_air_calculator
+
 from pe_orgair.services.retrieval.hybrid import hybrid_retriever
+
 from pe_orgair.config.settings import settings
 
 logger = structlog.get_logger()
 
+
 # Initialize MCP Server
+
 mcp_server = Server("pe-orgair-server")
-''', language="python")
-    
-    st.markdown("""
-    **Key Points:**
-    - Import the official `mcp` SDK from Anthropic
-    - `Server` class is the core MCP server
-    - `stdio_server` provides stdio transport for Claude Desktop
-    """)
-    
-    st.subheader("Part 2: Defining MCP Tools")
-    
-    st.markdown("""
-    The Org-AI-R score is a composite metric combining:
-    - **Idiosyncratic Readiness (V^R):** Internal capabilities
-    - **Systematic Opportunity (H^R):** External market opportunities
-    - **Synergy Score:** Interaction between internal and external factors
-    """)
-    
-    st.latex(r"S = f(V^R, H^R, \text{Synergy})")
-    
-    with st.expander("📄 View MCP Tools Implementation Code", expanded=False):
-        st.code('''# ============================================
+
+
+# ============================================
+
 # TOOLS - Executable functions
+
 # ============================================
 
 @mcp_server.list_tools()
+
 async def list_tools() -> List[Tool]:
+
     """List all available tools."""
+
     return [
+
         Tool(
+
             name="calculate_org_air_score",
+
             description="""Calculate the Org-AI-R (Organizational AI-Readiness) score for a company.
+
             
+
 Returns a comprehensive assessment including:
+
 - Final Org-AI-R score (0-100)
+
 - V^R (Idiosyncratic Readiness) component
+
 - H^R (Systematic Opportunity) component  
+
 - Synergy score
+
 - SEM-based confidence interval
+
 - Calculation audit trail""",
+
             inputSchema={
+
                 "type": "object",
+
                 "properties": {
+
                     "company_id": {
+
                         "type": "string",
+
                         "description": "Unique company identifier",
+
                     },
+
                     "sector_id": {
+
                         "type": "string",
-                        "description": "Industry sector",
+
+                        "description": "Industry sector (e.g., 'technology', 'healthcare')",
+
                         "enum": ["technology", "healthcare", "financial_services", "manufacturing", "retail", "energy"],
+
                     },
+
                     "dimension_scores": {
+
                         "type": "array",
+
                         "items": {"type": "number", "minimum": 0, "maximum": 100},
+
                         "minItems": 7,
+
                         "maxItems": 7,
+
                         "description": "Seven dimension scores: [data_infra, governance, tech_stack, talent, leadership, use_cases, culture]",
+
                     },
+
                     "talent_concentration": {
+
                         "type": "number",
+
                         "minimum": 0,
+
                         "maximum": 1,
+
                         "description": "Talent concentration ratio (0-1)",
+
                     },
+
                 },
+
                 "required": ["company_id", "sector_id", "dimension_scores"],
+
             },
+
         ),
+
         Tool(
+
             name="get_company_evidence",
-            description="Retrieve AI-readiness evidence for a company from SEC filings, job postings, and other sources.",
+
+            description="""Retrieve AI-readiness evidence for a company.
+
+            
+
+Searches SEC filings, job postings, and other sources for evidence
+
+supporting dimension assessments. Returns ranked evidence items with
+
+confidence scores and source citations.""",
+
             inputSchema={
+
                 "type": "object",
+
                 "properties": {
-                    "company_id": {"type": "string", "description": "Company identifier"},
-                    "dimension": {
+
+                    "company_id": {
+
                         "type": "string",
+
+                        "description": "Company identifier",
+
+                    },
+
+                    "dimension": {
+
+                        "type": "string",
+
                         "description": "Specific dimension to search",
+
                         "enum": ["data_infrastructure", "ai_governance", "technology_stack", 
+
                                 "talent", "leadership", "use_case_portfolio", "culture", "all"],
+
                     },
-                    "limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 10},
+
+                    "query": {
+
+                        "type": "string",
+
+                        "description": "Optional search query to refine results",
+
+                    },
+
+                    "limit": {
+
+                        "type": "integer",
+
+                        "minimum": 1,
+
+                        "maximum": 50,
+
+                        "default": 10,
+
+                    },
+
                 },
+
                 "required": ["company_id"],
+
             },
+
         ),
+
         Tool(
+
             name="project_ebitda_impact",
-            description="Project EBITDA impact from AI-readiness improvements using v2.0 conservative model.",
+
+            description="""Project EBITDA impact from AI-readiness improvements.
+
+            
+
+Uses the v2.0 conservative EBITDA attribution model to project
+
+financial impact across three scenarios (Conservative, Base, Optimistic).
+
+Includes risk adjustments and confidence bounds.""",
+
             inputSchema={
+
                 "type": "object",
+
                 "properties": {
+
                     "company_id": {"type": "string"},
-                    "entry_score": {"type": "number", "minimum": 0, "maximum": 100, "description": "Current Org-AI-R score"},
-                    "target_score": {"type": "number", "minimum": 0, "maximum": 100, "description": "Target Org-AI-R score"},
-                    "holding_period_years": {"type": "integer", "minimum": 1, "maximum": 10, "default": 5},
-                    "h_r_score": {"type": "number", "minimum": 0, "maximum": 100, "description": "Systematic opportunity score"},
-                },
-                "required": ["company_id", "entry_score", "target_score", "h_r_score"],
-            },
-        ),
-        Tool(
-            name="analyze_whatif_scenario",
-            description="Analyze what-if scenarios for AI investment decisions.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "company_id": {"type": "string"},
-                    "scenario_name": {"type": "string"},
-                    "dimension_changes": {
-                        "type": "object",
-                        "description": "Map of dimension -> score change",
-                        "additionalProperties": {"type": "number"},
+
+                    "entry_score": {
+
+                        "type": "number",
+
+                        "minimum": 0,
+
+                        "maximum": 100,
+
+                        "description": "Current Org-AI-R score",
+
                     },
-                    "investment_usd": {"type": "number", "description": "Planned investment amount"},
+
+                    "target_score": {
+
+                        "type": "number",
+
+                        "minimum": 0,
+
+                        "maximum": 100,
+
+                        "description": "Target Org-AI-R score after improvements",
+
+                    },
+
+                    "holding_period_years": {
+
+                        "type": "integer",
+
+                        "minimum": 1,
+
+                        "maximum": 10,
+
+                        "default": 5,
+
+                    },
+
+                    "h_r_score": {
+
+                        "type": "number",
+
+                        "minimum": 0,
+
+                        "maximum": 100,
+
+                        "description": "Systematic opportunity score",
+
+                    },
+
                 },
-                "required": ["company_id", "scenario_name", "dimension_changes"],
+
+                "required": ["company_id", "entry_score", "target_score", "h_r_score"],
+
             },
+
         ),
+
         Tool(
-            name="get_fund_portfolio",
-            description="Get portfolio summary for a fund including Fund-AI-R score and company breakdown.",
+
+            name="analyze_whatif_scenario",
+
+            description="""Analyze what-if scenarios for AI investment decisions.
+
+            
+
+Model the impact of specific AI initiatives on Org-AI-R score
+
+and downstream financial metrics.""",
+
             inputSchema={
+
                 "type": "object",
+
                 "properties": {
-                    "fund_id": {"type": "string"},
-                    "include_companies": {"type": "boolean", "default": True},
-                    "include_trends": {"type": "boolean", "default": False},
+
+                    "company_id": {"type": "string"},
+
+                    "scenario_name": {"type": "string"},
+
+                    "dimension_changes": {
+
+                        "type": "object",
+
+                        "description": "Map of dimension -> score change",
+
+                        "additionalProperties": {"type": "number"},
+
+                    },
+
+                    "investment_usd": {
+
+                        "type": "number",
+
+                        "description": "Planned investment amount",
+
+                    },
+
                 },
-                "required": ["fund_id"],
+
+                "required": ["company_id", "scenario_name", "dimension_changes"],
+
             },
+
         ),
+
+        Tool(
+
+            name="get_fund_portfolio",
+
+            description="""Get portfolio summary for a fund.
+
+            
+
+Returns Fund-AI-R score, company breakdown, concentration metrics,
+
+and portfolio-level insights.""",
+
+            inputSchema={
+
+                "type": "object",
+
+                "properties": {
+
+                    "fund_id": {"type": "string"},
+
+                    "include_companies": {
+
+                        "type": "boolean",
+
+                        "default": True,
+
+                    },
+
+                    "include_trends": {
+
+                        "type": "boolean", 
+
+                        "default": False,
+
+                    },
+
+                },
+
+                "required": ["fund_id"],
+
+            },
+
+        ),
+
     ]
 
+
 @mcp_server.call_tool()
+
 async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
+
     """Execute a tool and return results."""
+
     logger.info("mcp_tool_called", tool=name, args=arguments)
+
     
+
     try:
+
         if name == "calculate_org_air_score":
+
             result = await _handle_calculate_score(arguments)
+
         elif name == "get_company_evidence":
+
             result = await _handle_get_evidence(arguments)
+
         elif name == "project_ebitda_impact":
+
             result = await _handle_ebitda_projection(arguments)
+
         elif name == "analyze_whatif_scenario":
+
             result = await _handle_whatif(arguments)
+
         elif name == "get_fund_portfolio":
+
             result = await _handle_fund_portfolio(arguments)
+
         else:
+
             result = {"error": f"Unknown tool: {name}"}
+
         
+
         return [TextContent(type="text", text=json.dumps(result, indent=2, default=str))]
+
         
+
     except Exception as e:
+
         logger.exception("mcp_tool_error", tool=name)
+
         return [TextContent(type="text", text=json.dumps({"error": str(e)}))]
 
-# Tool handler implementations
+
 async def _handle_calculate_score(args: Dict) -> Dict:
+
     """Handle score calculation."""
+
+    # Get sector baseline
+
     sector_baselines = {
+
         "technology": 85, "healthcare": 78, "financial_services": 82,
+
         "manufacturing": 72, "retail": 75, "energy": 68,
+
     }
+
     
+
     result = org_air_calculator.calculate(
+
         company_id=args["company_id"],
+
         sector_id=args["sector_id"],
+
         dimension_scores=args["dimension_scores"],
+
         talent_concentration=args.get("talent_concentration", 0.2),
+
         hr_baseline=sector_baselines.get(args["sector_id"], 75),
+
         position_factor=0.1,
+
         evidence_count=args.get("evidence_count", 10),
+
     )
+
     
+
     return {
+
         "score_id": result.score_id,
+
         "company_id": result.company_id,
+
         "final_score": float(result.final_score),
+
         "components": {
+
             "v_r_score": float(result.vr_result.vr_score),
+
             "h_r_score": float(result.hr_result.hr_score),
+
             "synergy_score": float(result.synergy_result.synergy_score),
+
         },
+
         "confidence_interval": {
+
             "lower": float(result.confidence_interval.ci_lower),
+
             "upper": float(result.confidence_interval.ci_upper),
+
             "sem": float(result.confidence_interval.sem),
+
         },
+
+        "audit_trail": {
+
+            "weighted_mean": float(result.vr_result.weighted_mean),
+
+            "cv": float(result.vr_result.coefficient_of_variation),
+
+            "talent_risk_adj": float(result.vr_result.talent_risk_adjustment),
+
+        },
+
         "timestamp": result.timestamp.isoformat(),
+
         "parameter_version": result.parameter_version,
+
     }
+
 
 async def _handle_get_evidence(args: Dict) -> Dict:
+
     """Handle evidence retrieval."""
+
     query = args.get("query", f"AI readiness {args.get('dimension', '')}")
+
     
+
     results = await hybrid_retriever.retrieve(
+
         query=query,
+
         k=args.get("limit", 10),
+
         filter_metadata={"company_id": args["company_id"]} if args.get("company_id") else None,
+
     )
+
     
+
     return {
+
         "company_id": args["company_id"],
+
         "dimension": args.get("dimension", "all"),
+
         "evidence_count": len(results),
+
         "evidence_items": [
+
             {
+
                 "doc_id": r.doc_id,
+
                 "excerpt": r.content[:500] + "..." if len(r.content) > 500 else r.content,
+
                 "relevance_score": r.score,
+
                 "retrieval_method": r.retrieval_method,
+
                 "metadata": r.metadata,
+
             }
+
             for r in results
+
         ],
+
     }
+
 
 async def _handle_ebitda_projection(args: Dict) -> Dict:
+
     """Handle EBITDA projection with v2.0 parameters."""
+
     from decimal import Decimal
+
     
+
     delta_air = args["target_score"] - args["entry_score"]
+
     h_r = args["h_r_score"]
+
     
+
     # v2.0 conservative parameters
+
     gamma_0 = Decimal("0.0025")  # 0.25%
+
     gamma_1 = Decimal("0.05")
+
     gamma_2 = Decimal("0.025")
+
     gamma_3 = Decimal("0.01")   # 1.0%
+
     threshold = 25
+
     
+
     # Base calculation
+
     base_impact = (
+
         gamma_0 +
+
         gamma_1 * Decimal(str(delta_air)) +
+
         gamma_2 * Decimal(str(delta_air)) * Decimal(str(h_r)) / 100 +
+
         (gamma_3 if delta_air > threshold else Decimal(0))
+
     )
+
     
+
     return {
+
         "company_id": args["company_id"],
+
         "entry_score": args["entry_score"],
+
         "target_score": args["target_score"],
+
         "delta_air": delta_air,
+
         "holding_period_years": args.get("holding_period_years", 5),
+
         "scenarios": {
+
             "conservative": {
+
                 "ebitda_impact_pct": float(base_impact * Decimal("0.7")),
+
                 "description": "30% haircut on base case",
+
             },
+
             "base": {
+
                 "ebitda_impact_pct": float(base_impact),
+
                 "description": "Expected outcome",
+
             },
+
             "optimistic": {
+
                 "ebitda_impact_pct": float(base_impact * Decimal("1.3")),
+
                 "description": "30% uplift on base case",
+
             },
+
         },
+
         "parameter_version": "v2.0",
+
         "disclaimer": "Projections are estimates. Actual results may vary.",
+
     }
+
 
 async def _handle_whatif(args: Dict) -> Dict:
+
     """Handle what-if scenario analysis."""
+
     return {
+
         "company_id": args["company_id"],
+
         "scenario_name": args["scenario_name"],
+
         "dimension_changes": args["dimension_changes"],
+
         "projected_impact": {
-            "org_air_change": sum(args["dimension_changes"].values()) * 0.14,
+
+            "org_air_change": sum(args["dimension_changes"].values()) * 0.14,  # Simplified
+
             "confidence": "medium",
+
         },
+
         "recommendation": "Further analysis recommended",
+
     }
 
+
 async def _handle_fund_portfolio(args: Dict) -> Dict:
+
     """Handle fund portfolio request."""
+
     return {
+
         "fund_id": args["fund_id"],
+
         "fund_air_score": 68.5,
+
         "company_count": 12,
+
         "metrics": {
+
             "avg_org_air": 67.3,
+
             "min_org_air": 45.2,
+
             "max_org_air": 82.1,
+
             "concentration_risk": "medium",
+
         },
+
         "as_of": datetime.utcnow().isoformat(),
+
     }
-''', language="python")
-    
-    st.markdown("""
-    **Key Implementation Notes:**
-    - Tools have clear input schemas with validation rules
-    - Each tool handler processes arguments and returns structured JSON
-    - Error handling ensures robust operation
-    - Tools enable AI agents to perform complex assessments
-    """)
-    
-    st.subheader("Part 3: Defining MCP Resources")
-    
-    with st.expander("📄 View MCP Resources Implementation Code", expanded=False):
-        st.code('''# ============================================
+
+
+# ============================================
+
 # RESOURCES - Data exposure
+
 # ============================================
 
 @mcp_server.list_resources()
+
 async def list_resources() -> List[Resource]:
+
     """List available resources."""
+
     return [
+
         Resource(
+
             uri="orgair://companies",
+
             name="All Companies",
+
             description="List of all companies in the platform",
+
             mimeType="application/json",
+
         ),
+
         Resource(
+
             uri="orgair://sectors",
+
             name="Sector Calibrations",
+
             description="H^R baselines and dimension weights by sector",
+
             mimeType="application/json",
+
         ),
+
         Resource(
+
             uri="orgair://parameters/v2.0",
+
             name="Model Parameters v2.0",
+
             description="Current scoring parameters",
+
             mimeType="application/json",
+
         ),
+
     ]
+
 
 @mcp_server.list_resource_templates()
+
 async def list_resource_templates() -> List[ResourceTemplate]:
+
     """List resource templates for dynamic URIs."""
+
     return [
+
         ResourceTemplate(
+
             uriTemplate="orgair://company/{company_id}",
+
             name="Company Details",
+
             description="Get details for a specific company",
+
             mimeType="application/json",
+
         ),
+
         ResourceTemplate(
+
             uriTemplate="orgair://company/{company_id}/score",
+
             name="Company Score",
+
             description="Current Org-AI-R score for a company",
+
             mimeType="application/json",
+
         ),
+
         ResourceTemplate(
+
             uriTemplate="orgair://company/{company_id}/evidence",
+
             name="Company Evidence",
+
             description="Evidence items for a company",
+
             mimeType="application/json",
+
         ),
+
         ResourceTemplate(
+
             uriTemplate="orgair://fund/{fund_id}",
+
             name="Fund Details",
+
             description="Fund portfolio and metrics",
+
             mimeType="application/json",
+
         ),
+
     ]
 
+
 @mcp_server.read_resource()
+
 async def read_resource(uri: str) -> str:
+
     """Read a resource by URI."""
+
     logger.info("mcp_resource_read", uri=uri)
+
     
+
     if uri == "orgair://sectors":
+
         return json.dumps({
+
             "sectors": [
+
                 {"id": "technology", "name": "Technology", "h_r_baseline": 85},
+
                 {"id": "healthcare", "name": "Healthcare", "h_r_baseline": 78},
+
                 {"id": "financial_services", "name": "Financial Services", "h_r_baseline": 82},
+
                 {"id": "manufacturing", "name": "Manufacturing", "h_r_baseline": 72},
+
                 {"id": "retail", "name": "Retail/Consumer", "h_r_baseline": 75},
+
                 {"id": "energy", "name": "Energy/Utilities", "h_r_baseline": 68},
+
             ]
+
         })
+
     
+
     elif uri == "orgair://parameters/v2.0":
+
         return json.dumps({
+
             "version": "v2.0",
+
             "parameters": {
+
                 "alpha": 0.60,
+
                 "beta": 0.12,
+
                 "lambda": 0.25,
+
                 "delta": 0.15,
+
                 "ebitda": {
+
                     "gamma_0": 0.0025,
+
                     "gamma_1": 0.05,
+
                     "gamma_2": 0.025,
+
                     "gamma_3": 0.01,
+
                     "threshold": 25,
+
                 },
+
             },
+
         })
+
     
+
     elif uri.startswith("orgair://company/"):
+
         parts = uri.replace("orgair://company/", "").split("/")
+
         company_id = parts[0]
+
         
+
         if len(parts) == 1:
+
             return json.dumps({"company_id": company_id, "name": f"Company {company_id}"})
+
         elif parts[1] == "score":
+
             return json.dumps({"company_id": company_id, "org_air_score": 72.5})
+
         elif parts[1] == "evidence":
+
             return json.dumps({"company_id": company_id, "evidence_count": 23})
+
     
+
     return json.dumps({"error": f"Unknown resource: {uri}"})
-''', language="python")
-    
-    st.markdown("""
-    **Resource Capabilities:**
-    - Static resources provide reference data (sectors, parameters)
-    - Dynamic resources use URI templates with parameters
-    - AI agents can fetch specific company or fund data
-    - Standardized data access ensures consistency
-    """)
-    
-    st.subheader("Part 4: Defining MCP Prompts")
-    
-    with st.expander("📄 View MCP Prompts Implementation Code", expanded=False):
-        st.code('''# ============================================
+
+
+# ============================================
+
 # PROMPTS - Reusable templates
+
 # ============================================
 
 @mcp_server.list_prompts()
+
 async def list_prompts() -> List[Prompt]:
+
     """List available prompt templates."""
+
     return [
+
         Prompt(
+
             name="due_diligence_assessment",
+
             description="Comprehensive AI-readiness due diligence assessment",
+
             arguments=[
+
                 {"name": "company_id", "description": "Company to assess", "required": True},
+
                 {"name": "assessment_depth", "description": "screening, limited, or full", "required": False},
+
             ],
+
         ),
+
         Prompt(
+
             name="value_creation_plan",
+
             description="Generate AI value creation plan for portfolio company",
+
             arguments=[
+
                 {"name": "company_id", "description": "Target company", "required": True},
+
                 {"name": "target_score", "description": "Target Org-AI-R score", "required": True},
+
                 {"name": "timeline_months", "description": "Implementation timeline", "required": False},
+
             ],
+
         ),
+
         Prompt(
+
             name="competitive_analysis",
+
             description="Compare AI-readiness across peer companies",
+
             arguments=[
+
                 {"name": "company_ids", "description": "Comma-separated company IDs", "required": True},
+
                 {"name": "focus_dimensions", "description": "Specific dimensions to compare", "required": False},
+
             ],
+
         ),
+
     ]
 
+
 @mcp_server.get_prompt()
+
 async def get_prompt(name: str, arguments: Optional[Dict[str, str]] = None) -> List[PromptMessage]:
+
     """Get a prompt template with arguments."""
+
     arguments = arguments or {}
+
     
+
     if name == "due_diligence_assessment":
+
         company_id = arguments.get("company_id", "UNKNOWN")
+
         depth = arguments.get("assessment_depth", "limited")
+
         
+
         return [
+
             PromptMessage(
+
                 role="user",
+
                 content=TextContent(
+
                     type="text",
+
                     text=f"""Conduct a {depth} AI-readiness due diligence assessment for company {company_id}.
 
 Please:
+
 1. First, retrieve the current Org-AI-R score using the calculate_org_air_score tool
+
 2. Gather evidence for each of the seven dimensions using get_company_evidence
+
 3. Analyze strengths and gaps across dimensions
+
 4. Compare to sector benchmarks
+
 5. Identify key risks and opportunities
+
 6. Provide a recommendation with confidence level
 
 Structure your response as a formal due diligence memo."""
+
                 ),
+
             ),
+
         ]
+
     
+
     elif name == "value_creation_plan":
+
         company_id = arguments.get("company_id", "UNKNOWN")
+
         target = arguments.get("target_score", "75")
+
         timeline = arguments.get("timeline_months", "24")
+
         
+
         return [
+
             PromptMessage(
+
                 role="user",
+
                 content=TextContent(
+
                     type="text",
+
                     text=f"""Create an AI value creation plan for company {company_id}.
+
 Target: Improve Org-AI-R score to {target} within {timeline} months.
 
 Please:
+
 1. Get current score using calculate_org_air_score
+
 2. Identify highest-impact improvement areas
+
 3. Use analyze_whatif_scenario to model interventions
+
 4. Project EBITDA impact using project_ebitda_impact
+
 5. Create a phased implementation roadmap
+
 6. Estimate investment requirements and ROI
 
 Deliver as an executive-ready value creation plan."""
+
                 ),
+
             ),
+
         ]
+
     
+
     elif name == "competitive_analysis":
+
         company_ids = arguments.get("company_ids", "").split(",")
+
         dimensions = arguments.get("focus_dimensions", "all")
+
         
+
         return [
+
             PromptMessage(
+
                 role="user",
+
                 content=TextContent(
+
                     type="text",
+
                     text=f"""Conduct a competitive AI-readiness analysis for: {', '.join(company_ids)}.
+
 Focus dimensions: {dimensions}
 
 Please:
+
 1. Calculate Org-AI-R scores for each company
+
 2. Compare dimension-level performance
+
 3. Identify relative strengths and weaknesses
+
 4. Highlight best practices from leaders
+
 5. Provide strategic recommendations
 
 Present as a comparative analysis with visualizable data."""
+
                 ),
+
             ),
+
         ]
+
     
+
     return [PromptMessage(role="user", content=TextContent(type="text", text=f"Unknown prompt: {name}"))]
-''', language="python")
-    
-    st.markdown("""
-    **Prompt Benefits:**
-    - Guide AI agents through complex multi-step workflows
-    - Ensure consistent, high-quality analytical output
-    - Combine multiple tools and resources effectively
-    - Transform simple APIs into intelligent workflows
-    """)
-    
-    st.subheader("Part 5: Server Entry Point")
-    
-    with st.expander("📄 View Server Entry Point Code", expanded=False):
-        st.code('''# ============================================
+
+
+# ============================================
+
 # SERVER ENTRY POINT
+
 # ============================================
 
 async def main():
+
     """Run MCP server."""
+
     logger.info("starting_mcp_server", version=LATEST_PROTOCOL_VERSION)
+
     
+
     async with stdio_server() as (read_stream, write_stream):
+
         await mcp_server.run(
+
             read_stream,
+
             write_stream,
+
             mcp_server.create_initialization_options(),
+
         )
 
+
 if __name__ == "__main__":
+
     asyncio.run(main())
-''', language="python")
-    
-    st.success("✅ Task 9.1 Complete! You now have the full MCP server implementation ready to deploy.")
+Task 9.2: Claude Desktop Configuration
+// ~/.config/claude/claude_desktop_config.json (Linux/Mac)
 
-elif st.session_state.current_page == "Task 9.2: Claude Desktop Configuration":
-    st.subheader("Task 9.2: Configuring Claude Desktop")
-    
-    st.markdown("""
-    Now that you've built your MCP server, you need to configure Claude Desktop to connect to it.
-    This allows AI agents to discover and use your Org-AI-R assessment capabilities.
-    """)
-    
-    st.info("**Configuration File Location:**")
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        st.markdown("**Linux/Mac:**")
-        st.code("~/.config/claude/claude_desktop_config.json")
-    with col2:
-        st.markdown("**Windows:**")
-        st.code("%APPDATA%\\Claude\\claude_desktop_config.json")
-    
-    st.subheader("Configuration JSON")
-    
-    st.markdown("Add your MCP server to the configuration file:")
-    
-    with st.expander("📄 View Configuration JSON", expanded=False):
-        st.code('''{
+// %APPDATA%\Claude\claude_desktop_config.json (Windows)
+
+{
+
   "mcpServers": {
+
     "pe-orgair": {
+
       "command": "python",
+
       "args": ["-m", "pe_orgair.mcp.server"],
+
       "cwd": "/path/to/pe-orgair-platform",
+
       "env": {
+
         "OPENAI_API_KEY": "${OPENAI_API_KEY}",
+
         "SNOWFLAKE_ACCOUNT": "${SNOWFLAKE_ACCOUNT}",
+
         "SNOWFLAKE_USER": "${SNOWFLAKE_USER}",
+
         "SNOWFLAKE_PASSWORD": "${SNOWFLAKE_PASSWORD}"
+
       }
+
     }
+
   }
-}''', language="json")
-    
-    st.subheader("Configuration Parameters")
-    
-    params_data = {
-        "Parameter": ["command", "args", "cwd", "env"],
-        "Description": [
-            "Python interpreter to use",
-            "Module path to your server",
-            "Working directory for execution",
-            "Environment variables (API keys, credentials)"
-        ],
-        "Example": [
-            "python or python3",
-            "[-m, pe_orgair.mcp.server]",
-            "/home/user/pe-orgair-platform",
-            "API keys, database credentials"
-        ]
-    }
-    st.table(params_data)
-    
-    st.warning("⚠️ **Security:** Never commit credentials to version control! Use environment variable substitution.")
-    
-    st.subheader("Testing Your Configuration")
-    
-    st.markdown("""
-    1. **Restart Claude Desktop** completely (quit and reopen)
-    2. **Test connectivity** by asking Claude: "What MCP tools are available?"
-    3. **Verify tools** appear in Claude's interface
-    4. **Try a simple query:** "Calculate Org-AI-R score for company TEST-001"
-    """)
-    
-    with st.expander("📄 View Example Test Prompts", expanded=False):
-        st.code('''# Example test prompts in Claude Desktop:
 
-"Show me the available MCP tools"
-"Calculate the Org-AI-R score for company TEST-001 in the technology sector"
-"Read the orgair://sectors resource and show me the H^R baselines"
-"Use the due_diligence_assessment prompt for company ACME-001 with full depth"
-"Create a value creation plan for company XYZ-123"
-''', language="text")
-    
-    st.subheader("Troubleshooting")
-    
-    with st.expander("Server doesn't start"):
-        st.markdown("""
-        - Verify Python path: `which python` or `which python3`
-        - Check dependencies: `pip list | grep mcp`
-        - Test manually: `python -m pe_orgair.mcp.server`
-        - Review error logs in Claude Desktop developer console
-        """)
-    
-    with st.expander("Claude can't see tools"):
-        st.markdown("""
-        - Check server logs for errors
-        - Verify JSON schema validity
-        - Ensure `list_tools()` returns data
-        - Open Claude Desktop Developer Tools (View → Developer → Developer Tools)
-        """)
-    
-    st.success("✅ Task 9.2 Complete! Your MCP server is now integrated with Claude Desktop.")
-
-elif st.session_state.current_page == "Task 9.3: MCP Server Tests":
-    st.subheader("Task 9.3: Testing Your MCP Server")
-    
-    st.markdown("""
-    Comprehensive testing validates that your MCP server works correctly before production deployment.
-    Financial analysts depend on accurate AI-readiness assessments for investment decisions.
-    """)
-    
-    st.info("**Install Dependencies:** `pip install pytest pytest-asyncio`")
-    
-    st.subheader("Test Structure")
-    
-    st.markdown("Create `tests/integration/test_mcp_server.py`:")
-    
-    with st.expander("📄 View Test Implementation Code", expanded=False):
-        st.code('''# tests/integration/test_mcp_server.py
+}
+Task 9.3: MCP Server Tests
+# tests/integration/test_mcp_server.py
 
 """Integration tests for MCP server."""
 
 import pytest
+
 import json
+
 from pe_orgair.mcp.server import (
+
     list_tools, call_tool,
+
     list_resources, read_resource,
+
     list_prompts, get_prompt,
+
 )
 
+
 class TestMCPTools:
+
     """Test MCP tool implementations."""
+
     
+
     @pytest.mark.asyncio
+
     async def test_list_tools_returns_all_tools(self):
+
         tools = await list_tools()
+
         tool_names = [t.name for t in tools]
+
         
+
         assert "calculate_org_air_score" in tool_names
+
         assert "get_company_evidence" in tool_names
+
         assert "project_ebitda_impact" in tool_names
+
         assert len(tools) >= 5
+
     
+
     @pytest.mark.asyncio
+
     async def test_calculate_score_tool(self):
+
         result = await call_tool(
+
             "calculate_org_air_score",
+
             {
+
                 "company_id": "TEST-001",
+
                 "sector_id": "technology",
+
                 "dimension_scores": [70, 65, 75, 68, 72, 60, 70],
+
                 "talent_concentration": 0.2,
+
             }
+
         )
+
         
+
         data = json.loads(result[0].text)
+
         assert "final_score" in data
+
         assert 0 <= data["final_score"] <= 100
+
         assert "confidence_interval" in data
+
     
+
     @pytest.mark.asyncio
+
     async def test_ebitda_projection_tool(self):
+
         result = await call_tool(
+
             "project_ebitda_impact",
+
             {
+
                 "company_id": "TEST-001",
+
                 "entry_score": 55,
+
                 "target_score": 75,
+
                 "h_r_score": 80,
+
             }
+
         )
+
         
+
         data = json.loads(result[0].text)
+
         assert "scenarios" in data
+
         assert "conservative" in data["scenarios"]
+
         assert "base" in data["scenarios"]
+
         assert "optimistic" in data["scenarios"]
 
+
 class TestMCPResources:
+
     """Test MCP resource implementations."""
+
     
+
     @pytest.mark.asyncio
+
     async def test_list_resources(self):
+
         resources = await list_resources()
+
         uris = [r.uri for r in resources]
+
         
+
         assert "orgair://sectors" in uris
+
         assert "orgair://parameters/v2.0" in uris
+
     
+
     @pytest.mark.asyncio
+
     async def test_read_sectors_resource(self):
+
         content = await read_resource("orgair://sectors")
+
         data = json.loads(content)
+
         
+
         assert "sectors" in data
+
         assert len(data["sectors"]) == 6
+
         
+
         tech = next(s for s in data["sectors"] if s["id"] == "technology")
+
         assert tech["h_r_baseline"] == 85
 
+
 class TestMCPPrompts:
+
     """Test MCP prompt implementations."""
+
     
+
     @pytest.mark.asyncio
+
     async def test_list_prompts(self):
+
         prompts = await list_prompts()
+
         names = [p.name for p in prompts]
+
         
+
         assert "due_diligence_assessment" in names
+
         assert "value_creation_plan" in names
+
     
+
     @pytest.mark.asyncio
+
     async def test_get_due_diligence_prompt(self):
+
         messages = await get_prompt(
+
             "due_diligence_assessment",
+
             {"company_id": "ACME-001", "assessment_depth": "full"}
+
         )
+
         
+
         assert len(messages) == 1
+
         assert "ACME-001" in messages[0].content.text
+
         assert "full" in messages[0].content.text
-''', language="python")
-    
-    st.subheader("Running Tests")
-    
-    with st.expander("📄 View Test Commands", expanded=False):
-        st.code('''# Run all tests
-pytest tests/integration/test_mcp_server.py -v
-
-# Run specific test class
-pytest tests/integration/test_mcp_server.py::TestMCPTools -v
-
-# Run with coverage report
-pytest tests/integration/test_mcp_server.py --cov=pe_orgair.mcp --cov-report=html
-''', language="bash")
-    
-    st.subheader("Test Coverage Goals")
-    
-    coverage_data = {
-        "Category": ["Tools", "Resources", "Prompts", "Error Handling", "Integration"],
-        "Target Coverage": ["100%", "100%", "100%", "90%", "80%"],
-        "Critical Tests": [
-            "All tool executions",
-            "Static & dynamic URIs",
-            "All prompt variations",
-            "Invalid inputs, exceptions",
-            "End-to-end workflows"
-        ]
-    }
-    st.table(coverage_data)
-    
-    st.subheader("Manual Integration Testing")
-    
-    st.markdown("Test complete workflows with Claude Desktop:")
-    
-    with st.expander("📄 View Manual Test Examples", expanded=False):
-        st.code('''# Test 1: Score calculation
-"Calculate the Org-AI-R score for company TEST-001 in the technology sector 
-with dimension scores [75, 70, 80, 65, 72, 68, 77]"
-
-# Test 2: Evidence retrieval
-"Get evidence for the data_infrastructure dimension of company ACME-001"
-
-# Test 3: Financial projection
-"Project EBITDA impact for improving company XYZ-123 from score 60 to 80"
-
-# Test 4: Complex workflow
-"Use the value_creation_plan prompt to create a 24-month improvement plan 
-for company ABC-456 targeting a score of 85"
-
-# Test 5: Portfolio analysis
-"Get the portfolio summary for fund FUND-001 including all companies"
-''', language="text")
-    
-    st.success("✅ Task 9.3 Complete! Your MCP server is thoroughly tested and production-ready.")
-
-elif st.session_state.current_page == "Summary & Next Steps":
-    st.subheader("🎉 Congratulations!")
-    
-    st.markdown("""
-    You've completed the MCP Server Implementation lab! As a Software Developer at PE Org-AI-R, 
-    you've successfully built the foundational AI interoperability layer that enables Claude Desktop 
-    and other AI agents to autonomously interact with your Org-AI-R platform.
-    """)
-    
-    st.subheader("What You've Accomplished")
-    
-    st.markdown("""
-    ✅ **Built a Production MCP Server** exposing PE Org-AI-R capabilities  
-    ✅ **Implemented 5+ Tools** for AI-readiness scoring, evidence retrieval, and financial projections  
-    ✅ **Created Dynamic Resources** with URI-based data access  
-    ✅ **Defined 3+ Prompts** for complex analytical workflows  
-    ✅ **Integrated with Claude Desktop** for real-world AI agent testing  
-    ✅ **Comprehensive Testing** validating all functionality  
-    """)
-    
-    st.subheader("Core Value Delivered")
-    
-    st.markdown("""
-    This MCP server transforms how your organization uses AI:
-    
-    **For Financial Analysts:**
-    - AI agents can autonomously assess potential investment targets
-    - Consistent, comprehensive due diligence on demand
-    - Rapid what-if scenario modeling for deal evaluation
-    
-    **For Portfolio Managers:**
-    - Automated value creation planning across portfolio companies
-    - Real-time AI-readiness monitoring and gap analysis
-    - Strategic recommendations powered by AI insights
-    
-    **For the Organization:**
-    - Standardized AI agent interactions (no more custom integrations)
-    - Autonomous, intelligent workflows for strategic decisions
-    - Scalable AI-readiness platform ready for enterprise deployment
-    """)
-    
-    st.subheader("Next Steps & Extensions")
-    
-    st.markdown("""
-    **Immediate Actions:**
-    1. Deploy your MCP server to a production environment
-    2. Train your team on using AI agents with the new capabilities
-    3. Monitor usage patterns and gather feedback
-    
-    **Advanced Features (3+ hours):**
-    
-    **1. Add SSE Transport Support**
-    - Implement HTTP/SSE in addition to stdio
-    - Deploy to cloud (AWS Lambda, Cloud Run)
-    - Support multiple concurrent AI clients
-    
-    **2. Enhanced Tool Features**
-    - Batch scoring for multiple companies
-    - Caching for repeated queries
-    - Rate limiting and quotas
-    - Composite tools for multi-step operations
-    
-    **3. Advanced Prompts**
-    - Portfolio optimization recommendations
-    - Risk assessment workflows
-    - Automated reporting generation
-    - Multi-agent collaboration scenarios
-    
-    **4. Production Hardening**
-    - Authentication and authorization
-    - Comprehensive audit logging
-    - Monitoring and alerting
-    - Docker containerization
-    """)
-    
-    st.subheader("Reflection Questions")
-    
-    with st.expander("1. Why is protocol standardization critical for AI interoperability?"):
-        st.markdown("""
-        Consider how MCP compares to custom API integrations, the role of schemas in ensuring 
-        reliable AI agent behavior, and trade-offs between flexibility and standardization.
-        """)
-    
-    with st.expander("2. How would you design resource hierarchies for complex portfolio data?"):
-        st.markdown("""
-        Think about URI patterns for nested relationships (funds → companies → dimensions), 
-        caching strategies, and versioning for backwards compatibility.
-        """)
-    
-    with st.expander("3. What security considerations are unique to MCP servers?"):
-        st.markdown("""
-        Consider authentication for AI agents, rate limiting, data privacy when exposing 
-        sensitive information, and audit logging for compliance.
-        """)
-    
-    st.subheader("Production Readiness Checklist")
-    
-    st.markdown("""
-    Before deployment, ensure:
-    
-    - [ ] All tools are implemented and tested
-    - [ ] All resources support required URI patterns
-    - [ ] All prompts are documented and validated
-    - [ ] Error handling covers edge cases
-    - [ ] Configuration is externalized (no hardcoded secrets)
-    - [ ] Tests achieve >90% coverage
-    - [ ] Manual testing with Claude Desktop succeeds
-    - [ ] Performance meets requirements (latency, throughput)
-    - [ ] Documentation is complete and up-to-date
-    - [ ] Security review completed
-    """)
-    
-    st.success("""
-    **🎓 Lab Complete!** Your MCP server enables autonomous AI-driven insights across the PE Org-AI-R 
-    platform. This foundational interoperability layer positions your organization at the forefront 
-    of AI-native enterprise applications, where intelligent agents autonomously contribute to 
-    strategic investment decisions and portfolio company transformations.
-    """)
-
-# License
-st.caption('''
----
-## QuantUniversity License
-
-© QuantUniversity 2025  
-This notebook was created for **educational purposes only** and is **not intended for commercial use**.  
-
-- You **may not copy, share, or redistribute** this notebook **without explicit permission** from QuantUniversity.  
-- You **may not delete or modify this license cell** without authorization.  
-- This notebook was generated using **QuCreate**, an AI-powered assistant.  
-- Content generated by AI may contain **hallucinated or incorrect information**. Please **verify before using**.  
-
-All rights reserved. For permissions or commercial licensing, contact: [info@qusandbox.com](mailto:info@qusandbox.com)
-''')
